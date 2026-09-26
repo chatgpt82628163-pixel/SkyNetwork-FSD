@@ -31,7 +31,7 @@ constexpr int64_t kIdleTimeoutMs = 180000;
 constexpr int64_t kAtisFirstQueryMs = 1000, kAtisQueryIntervalMs = 60000;
 constexpr size_t kMaxAtisLines = 20, kMaxAtisLineLength = 256;
 constexpr int kPilotRangeNm = 60;
-constexpr int kMaxAtcRangeNm = 600;
+constexpr int kMaxAtcRangeNm = 10000;  // controllers send their range counted from their sector border
 
 // FSD error codes.
 enum {
