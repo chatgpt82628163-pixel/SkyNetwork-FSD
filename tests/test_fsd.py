@@ -214,6 +214,34 @@ class FsdTest(Network):
         for x in (atc, a, b, far):
             x.close()
 
+    def test_atis_text_is_published(self):
+        atis = self.atc("UUEE_ATIS", 1000003, "pw3")
+        self.assertTrue(atis.recv().startswith("#TMSERVER:UUEE_ATIS:"))
+        atis.send("%UUEE_ATIS:28125:0:50:4:55.97:37.41:0")
+        # The server asks for the text a second after login and keeps the answer for the data feed.
+        self.assertEqual(atis.expect("$CQSERVER"), "$CQSERVER:UUEE_ATIS:ATIS")
+        atis.send("$CRUUEE_ATIS:SERVER:ATIS:T:SHEREMETYEVO INFORMATION K 1200Z")
+        atis.send("$CRUUEE_ATIS:SERVER:ATIS:T:RWY 24R, QNH 1013: TL 60")
+        atis.send("$CRUUEE_ATIS:SERVER:ATIS:E:3")
+        time.sleep(0.3)
+        feed = json.load(urllib.request.urlopen(f"http://127.0.0.1:{self.http_port}/data.json", timeout=2))
+        c = next(c for c in feed["controllers"] if c["callsign"] == "UUEE_ATIS")
+        self.assertEqual(c["text_atis"], ["SHEREMETYEVO INFORMATION K 1200Z", "RWY 24R, QNH 1013: TL 60"])
+        atis.close()
+
+    def test_wide_controller_range(self):
+        # A centre may cover up to 10000 NM: an aircraft 1300 NM away is seen.
+        ctr = self.atc("UUWV_CTR", 1000003, "pw3")
+        self.assertTrue(ctr.recv().startswith("#TMSERVER:UUWV_CTR:"))
+        ctr.send("%UUWV_CTR:27500:6:2000:4:55.97:37.41:0")
+        p = self.pilot("AFL900", 1000001, "pw1")
+        p.send("@N:AFL900:2000:1:43.44:39.95:3000:180:0:0")   # Sochi, ~700 NM
+        self.assertTrue(ctr.expect("@N:AFL900").startswith("@N:AFL900:"))
+        feed = json.load(urllib.request.urlopen(f"http://127.0.0.1:{self.http_port}/data.json", timeout=2))
+        self.assertEqual(next(c for c in feed["controllers"] if c["callsign"] == "UUWV_CTR")["visual_range"], 2000)
+        for x in (ctr, p):
+            x.close()
+
     def test_controller_coordination(self):
         twr = self.atc("UUEE_TWR", 1000003, "pw3")
         ctr = self.atc("UUWV_CTR", 1000004, "pw4")

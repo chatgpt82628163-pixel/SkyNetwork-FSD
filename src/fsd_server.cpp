@@ -27,8 +27,11 @@ constexpr size_t kMaxLine = 4096;
 constexpr size_t kMaxOutBuffer = 1 << 20;
 constexpr int64_t kLoginTimeoutMs = 30000;
 constexpr int64_t kIdleTimeoutMs = 180000;
+// ATIS text: first asked a second after login, then every minute; at most 20 lines of 256 characters kept.
+constexpr int64_t kAtisFirstQueryMs = 1000, kAtisQueryIntervalMs = 60000;
+constexpr size_t kMaxAtisLines = 20, kMaxAtisLineLength = 256;
 constexpr int kPilotRangeNm = 60;
-constexpr int kMaxAtcRangeNm = 600;
+constexpr int kMaxAtcRangeNm = 10000;  // controllers send their range counted from their sector border
 
 // FSD error codes.
 enum {
@@ -170,6 +173,12 @@ void FsdServer::run() {
 
         // Timeouts and cleanup.
         int64_t now = now_ms();
+        for (auto& [fd, c] : conns_)
+            if (c->role == Role::Atc && !c->closing && now >= c->next_atis_query_ms) {
+                c->atis_pending.clear();
+                send(*c, "$CQSERVER:" + c->callsign + ":ATIS");
+                c->next_atis_query_ms = now + kAtisQueryIntervalMs;
+            }
         if (now >= next_account_check_ms_) {
             check_accounts();
             next_account_check_ms_ = now + cfg_.account_check_ms;
@@ -315,6 +324,7 @@ void FsdServer::handle_login(Conn& c, char kind, const std::vector<std::string>&
         return fail(ERR_LEVEL, "This position needs a supervisor or administrator rank");
 
     c.role = pilot ? Role::Pilot : Role::Atc;
+    c.next_atis_query_ms = now_ms() + kAtisFirstQueryMs;  // once the client has sent its position
     c.callsign = cs;
     c.member = *member;
     c.session_rating = pilot ? OBS : rating;
@@ -413,6 +423,18 @@ void FsdServer::handle_packet(Conn& c, const std::string& head, const std::vecto
         // Anything else addressed to a single callsign ($CR, $PO, #PC, $HO, #SB, ...) is relayed as-is.
         if (f.size() < 2) return;
         std::string to = upper(f[1]);
+        // The answer to the server's ATIS query: $CR<cs>:SERVER:ATIS:T:<line> ... $CR<cs>:SERVER:ATIS:E:<count>.
+        if (head == "$CR" && to == "SERVER" && c.role == Role::Atc && f.size() >= 4 && upper(f[2]) == "ATIS") {
+            if (f[3] == "T" && f.size() >= 5 && c.atis_pending.size() < kMaxAtisLines) {
+                std::string text;
+                for (size_t i = 4; i < f.size(); ++i) text += (i > 4 ? ":" : "") + f[i];
+                c.atis_pending.push_back(text.substr(0, kMaxAtisLineLength));
+            } else if (f[3] == "E") {
+                c.atis_lines = std::move(c.atis_pending);
+                c.atis_pending.clear();
+            }
+            return;
+        }
         if (to == "SERVER" || to == "*" || to.empty()) return;
         if (Conn* t = find(to)) send(*t, raw);
         else send_error(c, ERR_NOSUCHCS, f[1], "No such callsign");
@@ -666,7 +688,9 @@ std::string FsdServer::data_feed_json() const {
             std::snprintf(freq, sizeof freq, "%.3f", c.frequency);
             o += std::string(",\"rating\":") + json_str(rating_name(c.session_rating)) +
                  ",\"frequency\":" + json_str(freq) + ",\"facility\":" + std::to_string(c.facility) +
-                 ",\"visual_range\":" + std::to_string(c.vis_range) + "}";
+                 ",\"visual_range\":" + std::to_string(c.vis_range) + ",\"text_atis\":[";
+            for (size_t i = 0; i < c.atis_lines.size(); ++i) o += (i ? "," : "") + json_str(c.atis_lines[i]);
+            o += "]}";
             atc += (atc.empty() ? "" : ",") + o;
         }
     }
