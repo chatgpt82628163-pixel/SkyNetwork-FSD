@@ -46,6 +46,10 @@ struct Conn {
     double frequency = 0;  // ATC primary frequency in MHz
     int facility = 0, vis_range = 0;
     std::string flightplan;  // last $FP packet body (after "$FP<callsign>:")
+    // ATIS / controller info: the server asks every controller for it ($CQSERVER:<cs>:ATIS) and keeps the answer
+    // for the data feed.
+    std::vector<std::string> atis_lines, atis_pending;
+    int64_t next_atis_query_ms = 0;
 
     double range_nm() const;
 };

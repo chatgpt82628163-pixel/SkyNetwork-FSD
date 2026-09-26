@@ -214,6 +214,21 @@ class FsdTest(Network):
         for x in (atc, a, b, far):
             x.close()
 
+    def test_atis_text_is_published(self):
+        atis = self.atc("UUEE_ATIS", 1000003, "pw3")
+        self.assertTrue(atis.recv().startswith("#TMSERVER:UUEE_ATIS:"))
+        atis.send("%UUEE_ATIS:28125:0:50:4:55.97:37.41:0")
+        # The server asks for the text a second after login and keeps the answer for the data feed.
+        self.assertEqual(atis.expect("$CQSERVER"), "$CQSERVER:UUEE_ATIS:ATIS")
+        atis.send("$CRUUEE_ATIS:SERVER:ATIS:T:SHEREMETYEVO INFORMATION K 1200Z")
+        atis.send("$CRUUEE_ATIS:SERVER:ATIS:T:RWY 24R, QNH 1013: TL 60")
+        atis.send("$CRUUEE_ATIS:SERVER:ATIS:E:3")
+        time.sleep(0.3)
+        feed = json.load(urllib.request.urlopen(f"http://127.0.0.1:{self.http_port}/data.json", timeout=2))
+        c = next(c for c in feed["controllers"] if c["callsign"] == "UUEE_ATIS")
+        self.assertEqual(c["text_atis"], ["SHEREMETYEVO INFORMATION K 1200Z", "RWY 24R, QNH 1013: TL 60"])
+        atis.close()
+
     def test_controller_coordination(self):
         twr = self.atc("UUEE_TWR", 1000003, "pw3")
         ctr = self.atc("UUWV_CTR", 1000004, "pw4")
