@@ -313,8 +313,11 @@ void FsdServer::handle_login(Conn& c, char kind, const std::vector<std::string>&
     if (member->email_unconfirmed)
         return fail(ERR_CIDINVALID, "Email not confirmed: open the link sent to your email when you registered");
     if (find(cs)) return fail(ERR_CSINUSE, "Callsign in use");
+    // The rating chosen in the controller client may not be above the account's (the higher of the
+    // controller rating and the staff rank on the website).
     if (!pilot && (rating < OBS || rating > member->rating))
-        return fail(ERR_LEVEL, "Requested level too high");
+        return fail(ERR_LEVEL, std::string("Requested level too high: you chose ") + rating_name(rating) +
+                                   ", your account has " + rating_name(member->rating) + ". Choose your rating when connecting");
     // Supervisor and administrator positions (XXX_SUP, XXX_ADM) need the staff rank.
     auto ends_with = [&](const char* suffix) {
         size_t n = std::strlen(suffix);

@@ -169,7 +169,9 @@ class FsdTest(Network):
         b.send("#APafl100:SERVER:1000002:pw2:1:100:1:X")
         self.assertIn(":001:", b.recv())
         c = self.atc("UUEE_TWR", 1000002, "pw2", rating=2)
-        self.assertIn(":011:", c.recv())
+        err = c.recv()
+        self.assertIn(":011:", err)
+        self.assertIn("you chose S1, your account has OBS", err)
         for x in (a, b, c):
             x.close()
 
